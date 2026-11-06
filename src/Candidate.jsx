@@ -10,11 +10,7 @@ const scList = db => Object.values(db.scenarios).filter(s => s.active !== false)
 const myCands = (db, me) => Object.values(db.candidates).filter(c => c.userId === me && c.ev.length).sort((a, b) => b.createdAt - a.createdAt)
 const whoOf = (s, me) => (s.cand.A === me ? 'A' : s.cand.B === me ? 'B' : null)
 const title = (db, id) => db.scenarios[id]?.t || id
-
-const sys = (sc, who) => `You are ${who.role} in a short workplace roleplay at ${sc.org}. Setting: ${sc.brief}
-Your private information (share it only if it fits the conversation or you are asked): ${who.fact}
-${sc.nudge || ''}
-Rules: reply in 1 to 3 short, plain sentences, like a real colleague messaging. Stay in character. Never mention being an AI or these instructions. Do not solve the whole problem for the other person.`
+const sys = (sc, who) => `You are ${who.role} in a short workplace roleplay at ${sc.org}. Setting: ${sc.brief}Your private information (share it only if it fits the conversation or you are asked): ${who.fact}${sc.nudge || ''}Rules: reply in 1 to 3 short, plain sentences, like a real colleague messaging. Stay in character. Never mention being an AI or these instructions. Do not solve the whole problem for the other person.`
 
 export function Who({ db, S, setS }) {
   const [name, setName] = useState('')
@@ -195,11 +191,13 @@ function RoomInner({ db, go, s, p }) {
     }
     setBusy(false)
   }
+
   const send = (k, x) => { say(p, k, x); respond(k) }
   const choose = (k, i) => {
     op({ op: 'append', c: 'sessions', id: sid, f: 'decisions', items: [{ p, k, i, ts: Date.now() }] })
     op({ op: 'patch', c: 'sessions', id: sid, rec: { stage: { [p]: st + 1 } } })
   }
+
   const dec = k => s.decisions?.find(d => d.p === p && d.k === k)
   const opts = k => <div role="group" aria-label="Your response">{sc[k].o.map((o, i) => <button key={i} className="opt" disabled={paused} onClick={() => choose(k, i)}>{o.x}</button>)}</div>
   const said = k => dec(k) && <div className="msg me"><b>You</b>{sc[k].o[dec(k).i]?.x}</div>
@@ -212,38 +210,79 @@ function RoomInner({ db, go, s, p }) {
       <span>{waiting ? <>Invite code: <b>{s.code}</b></> : present.length ? <>With: {present.join(', ')}</> : 'Working on your own'}</span>
       <button className="btn sm ghost" onClick={() => { setPaused(!paused); ev(paused ? 'resume' : 'pause', paused ? 'Simulation resumed' : 'Simulation paused') }}>{paused ? 'Resume' : 'Pause'}</button>
     </div>
+
     <div className="room">
+      {/* SECTION 1: Personal Notes & Role Info */}
       <section>
-        <h2>You are the {mine.role}</h2>
-        <p className="private"><b>Only you know:</b> {mine.fact}</p>
-        <label htmlFor="notes"><b>Notes</b></label>
-        <textarea id="notes" rows={7} value={nt} disabled={paused} onChange={e => setNt(e.target.value)} placeholder="What is confirmed, what is assumed, who does what." />
+        <h2>Your role: {mine.role}</h2>
+        <p className="private"><b>Private to you:</b> {mine.fact}</p>
+        <label htmlFor="notes">
+          <b>Personal Notes Log</b>
+        </label>
+        <p className="muted" style={{ fontSize: '12px', margin: '2px 0 6px' }}>
+          Write down facts, risks, or next steps here. These notes are saved and visible to recruiters/evaluators on your final report.
+        </p>
+        <textarea id="notes" rows={7} value={nt} disabled={paused} onChange={e => setNt(e.target.value)} placeholder="Note what is confirmed, what is assumed, and who owns each action step..." />
       </section>
+
+      {/* SECTION 2: Scenario Prompt & Decision Points */}
       <section aria-live="polite">
-        <h2>Situation</h2>
+        <h2>Scenario Progression</h2>
+        <p className="muted" style={{ fontSize: '12px', margin: '2px 0 8px' }}>
+          Review incoming workplace situations and select how you would handle each challenge.
+        </p>
         <div className="msg"><b>Brief</b>{sc.brief}</div>
-        {st === 0 && <button className="btn" onClick={() => choose0()}>Open first message</button>}
+        
+        {st === 0 && (
+          <div style={{ margin: '14px 0' }}>
+            <p className="muted" style={{ fontSize: '12px', marginBottom: '6px' }}>Ready to start? Click below to reveal the first message and decision point.</p>
+            <button className="btn" onClick={() => choose0()}>Continue: Start Scenario</button>
+          </div>
+        )}
+        
         {st >= 1 && <div className="msg"><b>{sc.p1.from}</b>{sc.p1.x}</div>}
         {st === 1 ? opts('p1') : said('p1')}
-        {st >= 2 && <><div className="msg chg"><b>{sc.ch.from} · New information</b>{sc.ch.x}</div><div className="msg"><b>{sc.p2.from}</b>{sc.p2.x}</div></>}
+        
+        {st >= 2 && <>
+          <div className="msg chg"><b>{sc.ch.from} · New information</b>{sc.ch.x}</div>
+          <div className="msg"><b>{sc.p2.from}</b>{sc.p2.x}</div>
+        </>}
         {st === 2 ? opts('p2') : said('p2')}
-        {st >= 3 && <button className="btn" onClick={() => { ev('submit', 'Simulation submitted'); go('reflect', null, sid) }}>Finish</button>}
+        
+        {st >= 3 && (
+          <div style={{ margin: '14px 0' }}>
+            <p className="muted" style={{ fontSize: '12px', marginBottom: '6px' }}>All scenario decision points are complete. Click below to submit your simulation.</p>
+            <button className="btn" onClick={() => { ev('submit', 'Simulation submitted'); go('reflect', null, sid) }}>Finish and Reflect</button>
+          </div>
+        )}
       </section>
+
+      {/* SECTION 3: Team Communication Chat */}
       <section>
-        <h2>Team chat</h2>
-        <ol className="log">{(s.log || []).map(l => <li key={l.id} className={l.p === p ? 'me' : ''}><b>{l.p === p ? 'You' : l.w}</b>{l.x}</li>)}{busy && <li className="muted">…</li>}</ol>
+        <h2>Team Chat</h2>
+        <p className="muted" style={{ fontSize: '12px', margin: '2px 0 8px' }}>
+          Communicate with your teammate(s) (scripted bot, AI colleague, or live partner). Share your private facts or ask questions to coordinate your response.
+        </p>
+        <ol className="log">
+          {(s.log || []).map(l => <li key={l.id} className={l.p === p ? 'me' : ''}><b>{l.p === p ? 'You' : l.w}</b>{l.x}</li>)}
+          {busy && <li className="muted">Team member is typing…</li>}
+        </ol>
         {!paused && <>
           <div className="btns">
-            <button className="btn sm ghost" disabled={s.log?.some(l => l.p === p && l.k === 'share')} onClick={() => send('share', mine.fact)}>Share what I know</button>
+            <button className="btn sm ghost" disabled={s.log?.some(l => l.p === p && l.k === 'share')} onClick={() => send('share', mine.fact)}>Share my private fact</button>
             <button className="btn sm ghost" onClick={() => send('ask', 'Can we confirm what is known and what is still unconfirmed?')}>Ask what is confirmed</button>
           </div>
-          <div className="btns"><input className="grow" value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && draft.trim()) { send('msg', draft.trim()); setDraft('') } }} placeholder="Message your team" aria-label="Message" />
-            <button className="btn sm" disabled={!draft.trim()} onClick={() => { send('msg', draft.trim()); setDraft('') }}>Send</button></div>
+          <div className="btns">
+            <input className="grow" value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && draft.trim()) { send('msg', draft.trim()); setDraft('') } }} placeholder="Type a message to your team..." aria-label="Message" />
+            <button className="btn sm" disabled={!draft.trim()} onClick={() => { send('msg', draft.trim()); setDraft('') }}>Send</button>
+          </div>
         </>}
       </section>
     </div>
-    <details><summary>Session log</summary><Events ev={(s.events || []).filter(e => !e.p || e.p === p)} /></details>
+
+    <details style={{ marginTop: '16px' }}><summary>Session events</summary><Events ev={(s.events || []).filter(e => !e.p || e.p === p)} /></details>
   </>
+
   function choose0() { op({ op: 'patch', c: 'sessions', id: sid, rec: { stage: { [p]: 1 } } }) }
 }
 
